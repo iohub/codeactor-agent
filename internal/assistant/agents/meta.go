@@ -13,26 +13,23 @@ import (
 	"github.com/tmc/langchaingo/llms"
 )
 
-//go:embed coding.prompt.md
-var codingPrompt string
+//go:embed meta.prompt.md
+var metaPrompt string
 
-type ToolDefinition struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  map[string]interface{} `json:"parameters"`
-}
-
-type CodingAgent struct {
+// MetaAgent designs and instantiates specialized agents on-the-fly.
+// It uses embedded prompt engineering best practices to craft a custom
+// system prompt, select appropriate tools, and execute the task.
+type MetaAgent struct {
 	BaseAgent
 	GlobalCtx *globalctx.GlobalCtx
 	Adapters  []*tools.Adapter
 	maxSteps  int
 }
 
-func NewCodingAgent(globalCtx *globalctx.GlobalCtx, llm llms.LLM, maxSteps int) *CodingAgent {
+func NewMetaAgent(globalCtx *globalctx.GlobalCtx, llm llms.LLM, maxSteps int) *MetaAgent {
 	var toolDefs []ToolDefinition
 	if err := json.Unmarshal(ToolsJSON, &toolDefs); err != nil {
-		slog.Error("Failed to unmarshal coding tools", "error", err)
+		slog.Error("Failed to unmarshal meta tools", "error", err)
 	}
 
 	adapters := make([]*tools.Adapter, 0, len(toolDefs))
@@ -71,7 +68,7 @@ func NewCodingAgent(globalCtx *globalctx.GlobalCtx, llm llms.LLM, maxSteps int) 
 		case "finish":
 			fn = globalCtx.FlowOps.ExecuteFinish
 		default:
-			slog.Warn("Unknown tool in tools.json", "name", def.Name)
+			slog.Warn("Unknown tool in meta tools.json", "name", def.Name)
 			continue
 		}
 
@@ -79,7 +76,7 @@ func NewCodingAgent(globalCtx *globalctx.GlobalCtx, llm llms.LLM, maxSteps int) 
 		adapters = append(adapters, adapter)
 	}
 
-	return &CodingAgent{
+	return &MetaAgent{
 		BaseAgent: BaseAgent{
 			LLM:       llm,
 			Publisher: globalCtx.Publisher,
@@ -90,16 +87,21 @@ func NewCodingAgent(globalCtx *globalctx.GlobalCtx, llm llms.LLM, maxSteps int) 
 	}
 }
 
-func (a *CodingAgent) Name() string {
-	return "Coding-Agent"
+func (a *MetaAgent) Name() string {
+	return "Meta-Agent"
 }
 
-func (a *CodingAgent) Run(ctx context.Context, input string) (string, error) {
+// Run executes the meta agent workflow:
+//  1. Design a specialized agent using prompt engineering best practices
+//  2. Execute the designed agent with appropriate tools
+//  3. Return structured JSON with the design and execution result
+func (a *MetaAgent) Run(ctx context.Context, input string) (string, error) {
+	systemPrompt := a.GlobalCtx.FormatPrompt(metaPrompt)
 
 	messages := []llms.MessageContent{
 		{
 			Role:  llms.ChatMessageTypeSystem,
-			Parts: []llms.ContentPart{llms.TextPart(a.GlobalCtx.FormatPrompt(codingPrompt))},
+			Parts: []llms.ContentPart{llms.TextPart(systemPrompt)},
 		},
 		{
 			Role:  llms.ChatMessageTypeHuman,
@@ -107,16 +109,16 @@ func (a *CodingAgent) Run(ctx context.Context, input string) (string, error) {
 		},
 	}
 
-	// Convert adapters to llms.Tool
 	llmTools := make([]llms.Tool, len(a.Adapters))
 	for i, ad := range a.Adapters {
 		llmTools[i] = ad.ToLLMSTool()
 	}
 
 	for i := 0; i < a.maxSteps; i++ {
+		slog.Debug("MetaAgent calling LLM", "step", i)
 		resp, err := a.LLM.GenerateContent(ctx, messages, llms.WithTools(llmTools))
 		if err != nil {
-			slog.Error("CodingAgent LLM error", "error", err, "step", i)
+			slog.Error("MetaAgent LLM error", "error", err, "step", i)
 			return "", err
 		}
 
@@ -189,5 +191,5 @@ func (a *CodingAgent) Run(ctx context.Context, input string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("CodingAgent exceeded max steps")
+	return "", fmt.Errorf("MetaAgent exceeded max steps")
 }
