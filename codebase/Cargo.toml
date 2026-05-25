@@ -59,6 +59,10 @@ anyhow = "1"
 
 # BM25 full-text search
 tantivy = "0.22"
+aarch64 = "0.0.14"
 
 [dev-dependencies]
 tempfile = "3.8"
+
+[patch.crates-io]
+lance-core = { path = "patches/lance-core" }
