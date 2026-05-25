@@ -50,7 +50,7 @@ typetag = "0.2"
 
 lancedb = "=0.4.15"
 arrow = "50"
-reqwest = { version = "0.13.1", features = ["json"] }
+reqwest = { version = "0.13.1", default-features = false, features = ["json", "native-tls"] }
 futures = "0.3.31"
 toml = "0.8"
 dirs = "5.0"
