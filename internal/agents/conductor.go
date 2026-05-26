@@ -1076,8 +1076,10 @@ func (a *ConductorAgent) Run(ctx context.Context, input string, mem *memory.Conv
 							a.GlobalCtx.RepoSummary = toolResult
 						}
 					}
-					// 检测是否是 delegate 工具（委派成功）
-					if err == nil && strings.HasPrefix(t.Name(), "delegate_") {
+					// 检测是否是 delegate 工具（无论成功或失败，只要被调用就标记）
+				// 这确保即使 sub-agent 遇到 LLM API 错误，Conductor 也能正常响应文本，
+				// 而不会陷入"强制工具调用→再次失败→再次强制"的死循环
+					if strings.HasPrefix(t.Name(), "delegate_") {
 						a.hasDelegated = true
 					}
 					break

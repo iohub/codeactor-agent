@@ -254,6 +254,13 @@ func handleChatMessage(s *melody.Session, msg SocketMessage, taskManager *TaskMa
 				s.Write(data)
 			}
 
+			// 即使出错也保存 memory，防止进程重启后丢失对话状态
+			if dataManager != nil {
+				if saveErr := dataManager.SaveTaskMemory(chatData.TaskID, task.Memory); saveErr != nil {
+					slog.Error("Failed to save task memory on error", "error", saveErr, "task_id", chatData.TaskID)
+				}
+			}
+
 			// Shutdown dispatcher
 			dispatcher.Shutdown()
 			return
