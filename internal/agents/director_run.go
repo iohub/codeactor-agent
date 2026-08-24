@@ -145,6 +145,9 @@ func (a *DirectorAgent) Run(ctx context.Context, input string, mem *memory.Conve
 		}
 	}
 
+	// 记录初始消息数量，用于 memory 回流（只回流 RunAgentLoop 新增的消息）
+	initialMsgCount := len(messages)
+
 	// ═══════ 构建 ExecutorConfig 注入 hooks ═══════
 	cfg := ExecutorConfig{
 		InitialMessages: messages,
@@ -234,6 +237,18 @@ func (a *DirectorAgent) Run(ctx context.Context, input string, mem *memory.Conve
 
 	if loopErr != nil {
 		return "", loopErr
+	}
+
+	// ═══════ memory 回流：将 RunAgentLoop 新增的 assistant/tool 消息写回 mem ═══════
+	if mem != nil {
+		for _, msg := range result.History[initialMsgCount:] {
+			switch msg.Role {
+			case llm.RoleAssistant:
+				mem.AddAssistantMessage(msg.Content, convertToolCalls(msg.ToolCalls))
+			case llm.RoleTool:
+				mem.AddToolMessage(msg.Content, msg.ToolCallID)
+			}
+		}
 	}
 
 	// ═══════ 最终结果处理 ═══════
