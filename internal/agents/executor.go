@@ -54,6 +54,25 @@ type ExecutorConfig struct {
 	// Errors from this hook are logged but do not abort the loop.
 	OnStepEnd func(ctx context.Context, stepInfo StepInfo) error
 
+	// BeforeLLMCall 在每次 LLM 调用前回调。返回 error 即中断循环（熔断器检查在此实现）。
+	// 返回的 messages 替换当前本轮 LLM 调用的消息序列。
+	// 默认 nil 时无操作。
+	BeforeLLMCall func(messages []llm.Message) ([]llm.Message, error)
+
+	// ShouldReturn 是循环结束决策点。当 LLM 返回无 ToolCalls 时调用。
+	// 返回 true 则按原逻辑结束本轮循环（返回文本）；
+	// 返回 false 则以第二个返回值替换 messages 继续下一轮循环。
+	// 默认 nil 时等价于恒返回 true。
+	ShouldReturn func(response *llm.Response, messages []llm.Message) (bool, []llm.Message)
+
+	// MessageSanitizer 每步消息净化钩子，在 NormalizeMessages 之后、上下文压缩之前调用。
+	// 返回净化后的消息序列。默认 nil 时原样返回。
+	MessageSanitizer func(messages []llm.Message) []llm.Message
+
+	// OnLLMEnd 每次 LLM 调用完成后回调（无论成功或失败），用于熔断指标记录。
+	// 默认 nil 时无操作。
+	OnLLMEnd func(response *llm.Response, err error, duration time.Duration)
+
 	// 上下文压缩（tool 结果截断）配置，默认零值=关闭，仅调用方显式开启时生效
 	EnableContextCompression bool
 	// ContextCompressionThreshold 触发上下文压缩的 token 阈值，<=0 时使用默认值 DefaultContextCompressionThreshold
@@ -258,6 +277,11 @@ func RunAgentLoop(ctx context.Context, cfg ExecutorConfig) (ExecutorResult, erro
 			// Normalize messages before LLM call to merge consecutive assistants
 			messages = llm.NormalizeMessages(messages)
 
+			// MessageSanitizer hook: 消息净化（如配对修复）
+			if cfg.MessageSanitizer != nil {
+				messages = cfg.MessageSanitizer(messages)
+			}
+
 			// 上下文压缩: token 超阈值时按优先级截断 tool 执行结果
 			if cfg.EnableContextCompression {
 				threshold := cfg.ContextCompressionThreshold
@@ -325,6 +349,20 @@ func RunAgentLoop(ctx context.Context, cfg ExecutorConfig) (ExecutorResult, erro
 				}
 			}
 
+			// BeforeLLMCall hook: 熔断检查等（在压缩之后、ai_stream_start 之前）
+			if cfg.BeforeLLMCall != nil {
+				var beforeErr error
+				messages, beforeErr = cfg.BeforeLLMCall(messages)
+				if beforeErr != nil {
+					// 立即计算持续时间并报告
+					if cfg.OnLLMEnd != nil {
+						cfg.OnLLMEnd(nil, beforeErr, time.Since(llmStartTime))
+					}
+					err = beforeErr
+					break // 跳出内层重试循环
+				}
+			}
+
 			// Publish ai_stream_start before LLM call
 			if cfg.Publisher != nil {
 				cfg.Publisher.Publish("ai_stream_start", map[string]interface{}{
@@ -370,7 +408,7 @@ func RunAgentLoop(ctx context.Context, cfg ExecutorConfig) (ExecutorResult, erro
 				}
 			}
 
-			// Publish llm_call_end event after LLM invocation (regardless of error)
+			// llm_call_end event after LLM invocation (regardless of error)
 			if cfg.Publisher != nil {
 				metadata := map[string]interface{}{
 					"model":            cfg.LLM.Model(),
@@ -381,6 +419,11 @@ func RunAgentLoop(ctx context.Context, cfg ExecutorConfig) (ExecutorResult, erro
 					metadata["error"] = err.Error()
 				}
 				cfg.Publisher.PublishWithMetadata("llm_call_end", "", cfg.AgentName, metadata)
+			}
+
+			// OnLLMEnd hook: 熔断指标记录
+			if cfg.OnLLMEnd != nil {
+				cfg.OnLLMEnd(resp, err, time.Since(llmStartTime))
 			}
 
 			if err == nil {
@@ -464,6 +507,14 @@ func RunAgentLoop(ctx context.Context, cfg ExecutorConfig) (ExecutorResult, erro
 		writeRollout(assistantMsg)
 
 		if len(choice.ToolCalls) == 0 {
+			if cfg.ShouldReturn != nil {
+				shouldReturn, newMessages := cfg.ShouldReturn(resp, messages)
+				if !shouldReturn {
+					messages = newMessages
+					// 继续外层循环（下一轮 LLM 调用）
+					continue
+				}
+			}
 			return ExecutorResult{Text: choice.Content, History: history}, nil
 		}
 
