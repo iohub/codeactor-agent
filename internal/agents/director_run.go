@@ -158,7 +158,7 @@ func (a *DirectorAgent) Run(ctx context.Context, input string, mem *memory.Conve
 		Publisher:       a.Publisher,
 		LLMTimeout:      a.llmTimeout,
 		StepRetries:     a.stepRetries,
-		StopOnFinish:    false,
+		StopOnFinish:    true,
 
 		// BeforeLLMCall: 熔断器检查
 		BeforeLLMCall: func(msgs []llm.Message) ([]llm.Message, error) {
