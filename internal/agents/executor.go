@@ -40,7 +40,7 @@ type ExecutorConfig struct {
 	RepoContext string
 	// OnToolResult is an optional callback invoked after each tool executes.
 	// Used by Director for special handling (e.g. delegate_repo → RepoSummary).
-	OnToolResult func(toolName string, result string)
+	OnToolResult func(toolName string, toolCallID string, result string)
 
 	// OnAgentStart is called once before the agent loop begins.
 	// If it returns an error, the loop is aborted.
@@ -565,7 +565,7 @@ func RunAgentLoop(ctx context.Context, cfg ExecutorConfig) (ExecutorResult, erro
 			}
 
 			if cfg.OnToolResult != nil {
-				cfg.OnToolResult(tc.Function.Name, toolResult)
+				cfg.OnToolResult(tc.Function.Name, tc.ID, toolResult)
 			}
 
 			if cfg.Publisher != nil {
