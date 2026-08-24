@@ -153,6 +153,7 @@ func (a *DirectorAgent) Run(ctx context.Context, input string, mem *memory.Conve
 		InitialMessages: messages,
 		AgentName:       a.Name(),
 		Adapters:        a.Adapters,
+		AdapterIndex:    a.adapterIndex,
 		LLM:             a.LLM,
 		MaxSteps:        a.maxSteps,
 		Publisher:       a.Publisher,

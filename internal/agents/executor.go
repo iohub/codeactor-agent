@@ -77,6 +77,12 @@ type ExecutorConfig struct {
 	// 默认 nil 时无操作。
 	OnLLMEnd func(response *llm.Response, err error, duration time.Duration)
 
+	// AdapterIndex 工具分发索引，提供 O(1) 查找。
+	// 如果非 nil，则优先使用此索引进行工具分发；
+	// 如果为 nil，则回退到遍历 cfg.Adapters 的 O(n) 方式。
+	// 默认 nil，保持向后兼容。
+	AdapterIndex map[string]*tools.Adapter
+
 	// 上下文压缩（tool 结果截断）配置，默认零值=关闭，仅调用方显式开启时生效
 	EnableContextCompression bool
 	// ContextCompressionThreshold 触发上下文压缩的 token 阈值，<=0 时使用默认值 DefaultContextCompressionThreshold
@@ -551,34 +557,44 @@ func RunAgentLoop(ctx context.Context, cfg ExecutorConfig) (ExecutorResult, erro
 				}, cfg.AgentName)
 			}
 
-			for _, t := range cfg.Adapters {
-				if t.Name() == tc.Function.Name {
-					found = true
-					startTime := time.Now()
-
-					// Log delegate tool calls with full arguments to dedicated delegate log
-					if strings.HasPrefix(tc.Function.Name, "delegate_") {
-						agentName := strings.TrimPrefix(tc.Function.Name, "delegate_")
-						LogDelegateCall(tc.Function.Name, agentName, tc.Function.Arguments)
+			// 优先使用索引查找（O(1)），回退到遍历（O(n)）
+			var t *tools.Adapter
+			if cfg.AdapterIndex != nil {
+				t, found = cfg.AdapterIndex[tc.Function.Name]
+			} else {
+				for _, candidate := range cfg.Adapters {
+					if candidate.Name() == tc.Function.Name {
+						t = candidate
+						found = true
+						break
 					}
-
-					// 为工具调用创建独立超时 context，防止工具卡死（如用户确认无限等待）
-					// 同时 WithCancel 保证了父 context 取消时工具调用也会被取消
-					cancelCtx, cancelCtxCancel := context.WithCancel(ctx)
-					toolCtx, toolCancel := context.WithTimeout(cancelCtx, 180*time.Second)
-					toolResult, callErr = t.Call(toolCtx, tc.Function.Arguments)
-					cancelCtxCancel()
-					toolCancel()
-					if callErr != nil {
-						if errors.Is(callErr, context.DeadlineExceeded) {
-							toolResult = fmt.Sprintf("Error: tool execution timed out after 120 seconds")
-						} else {
-							toolResult = fmt.Sprintf("Error: %v", callErr)
-						}
-					}
-					logToolCall(tc.Function.Name, cfg.AgentName, tc.Function.Arguments, toolResult, callErr, startTime)
-					break
 				}
+			}
+
+			if found {
+				startTime := time.Now()
+
+				// Log delegate tool calls with full arguments to dedicated delegate log
+				if strings.HasPrefix(tc.Function.Name, "delegate_") {
+					agentName := strings.TrimPrefix(tc.Function.Name, "delegate_")
+					LogDelegateCall(tc.Function.Name, agentName, tc.Function.Arguments)
+				}
+
+				// 为工具调用创建独立超时 context，防止工具卡死（如用户确认无限等待）
+				// 同时 WithCancel 保证了父 context 取消时工具调用也会被取消
+				cancelCtx, cancelCtxCancel := context.WithCancel(ctx)
+				toolCtx, toolCancel := context.WithTimeout(cancelCtx, 180*time.Second)
+				toolResult, callErr = t.Call(toolCtx, tc.Function.Arguments)
+				cancelCtxCancel()
+				toolCancel()
+				if callErr != nil {
+					if errors.Is(callErr, context.DeadlineExceeded) {
+						toolResult = fmt.Sprintf("Error: tool execution timed out after 120 seconds")
+					} else {
+						toolResult = fmt.Sprintf("Error: %v", callErr)
+					}
+				}
+				logToolCall(tc.Function.Name, cfg.AgentName, tc.Function.Arguments, toolResult, callErr, startTime)
 			}
 			if !found {
 				toolResult = fmt.Sprintf("Tool %s not found", tc.Function.Name)

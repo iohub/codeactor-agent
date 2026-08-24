@@ -204,5 +204,10 @@ func (a *DirectorAgent) registerCustomAgent(ca *CustomAgent) {
 	a.Adapters = append(a.Adapters, delegateAdapter)
 	a.customAgents[delegateName] = ca
 
+	// 同步更新工具分发索引
+	if a.adapterIndex != nil {
+		a.adapterIndex[delegateAdapter.Name()] = delegateAdapter
+	}
+
 	slog.Info("Custom agent registered", "delegate_name", delegateName, "display_name", ca.DisplayName, "tools", ca.ToolsUsed)
 }

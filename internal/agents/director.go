@@ -66,6 +66,8 @@ type DirectorAgent struct {
 	BrowserAgent   *BrowserAgent
 	GlobalCtx      *globalctx.GlobalCtx
 	Adapters       []*tools.Adapter
+	// adapterIndex 工具分发索引，维护 Adapters 的 O(1) 查找映射
+	adapterIndex map[string]*tools.Adapter
 	maxSteps       int
 	metaRetryCount int                             // max retries for Meta-Agent JSON parse failures
 	toolDefMap     map[string]tools.ToolDefinition // tool name → definition from tools.json
@@ -275,28 +277,26 @@ func NewDirectorAgent(globalCtx *globalctx.GlobalCtx, engine llm.Engine, repo *R
 				// ── Immediately execute the newly registered agent ──
 				// Find the just-created delegate tool and call it
 				delegateName := "delegate_" + snakeName
-				for _, ad := range self.Adapters {
-					if ad.Name() == delegateName {
-						slog.Info("Director executing newly designed agent", "delegate", delegateName, "display_name", execResult.AgentName)
-						callResult, callErr := ad.Call(ctx, fmt.Sprintf(`{"task": %q}`, agentTask))
-						if callErr != nil {
-							return nil, fmt.Errorf("new agent %s execution failed: %w", execResult.AgentName, callErr)
-						}
-						// ad.Call returns JSON-encoded string, unmarshal to get the raw result
-						var rawResult string
-						if err := json.Unmarshal([]byte(callResult), &rawResult); err != nil {
-							rawResult = callResult
-						}
-						formattedResult := fmt.Sprintf(
-							"[Meta-Agent: Agent Designed and Executed]\nDesigned Agent: %s\nTools: %s\n\n[Execution Result]\n%s\n\n[New Agent Registered]\nA new specialized agent \"%s\" is now available via the `%s` tool for future tasks of this type.",
-							execResult.AgentName,
-							strings.Join(execResult.ToolsUsed, ", "),
-							rawResult,
-							execResult.AgentName,
-							delegateName,
-						)
-						return formattedResult, nil
+				if ad, found := self.adapterIndex[delegateName]; found {
+					slog.Info("Director executing newly designed agent", "delegate", delegateName, "display_name", execResult.AgentName)
+					callResult, callErr := ad.Call(ctx, fmt.Sprintf(`{"task": %q}`, agentTask))
+					if callErr != nil {
+						return nil, fmt.Errorf("new agent %s execution failed: %w", execResult.AgentName, callErr)
 					}
+					// ad.Call returns JSON-encoded string, unmarshal to get the raw result
+					var rawResult string
+					if err := json.Unmarshal([]byte(callResult), &rawResult); err != nil {
+						rawResult = callResult
+					}
+					formattedResult := fmt.Sprintf(
+						"[Meta-Agent: Agent Designed and Executed]\nDesigned Agent: %s\nTools: %s\n\n[Execution Result]\n%s\n\n[New Agent Registered]\nA new specialized agent \"%s\" is now available via the `%s` tool for future tasks of this type.",
+						execResult.AgentName,
+						strings.Join(execResult.ToolsUsed, ", "),
+						rawResult,
+						execResult.AgentName,
+						delegateName,
+					)
+					return formattedResult, nil
 				}
 				return nil, fmt.Errorf("newly registered agent %s not found in adapters", delegateName)
 			}
@@ -406,6 +406,12 @@ func NewDirectorAgent(globalCtx *globalctx.GlobalCtx, engine llm.Engine, repo *R
 	adapterCfg.CircuitBreakerResetTimeout = cfg.LLM.CircuitBreakerResetTimeout
 	directorAdapter := NewDirectorAdapter(true, adapterCfg) // enabled=true 启动 Metrics
 
+	// 构建 O(1) 工具分发索引
+	adapterIndex := make(map[string]*tools.Adapter, len(allAdapters))
+	for _, ad := range allAdapters {
+		adapterIndex[ad.Name()] = ad
+	}
+
 	self = &DirectorAgent{
 		BaseAgent:          BaseAgent{LLM: engine, Publisher: globalCtx.Publisher},
 		RepoAgent:          repo,
@@ -416,6 +422,7 @@ func NewDirectorAgent(globalCtx *globalctx.GlobalCtx, engine llm.Engine, repo *R
 		BrowserAgent:       browser,
 		GlobalCtx:          globalCtx,
 		Adapters:           allAdapters,
+		adapterIndex:       adapterIndex,
 		maxSteps:           maxSteps,
 		metaRetryCount:     metaRetryCount,
 		toolDefMap:         toolDefMap,
