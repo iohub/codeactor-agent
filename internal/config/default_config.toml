@@ -72,6 +72,19 @@ use_provider = "deepseek_v4_pro"
 [app]
 enable_streaming = true
 
+# ── Agent 最大步数配置 ──
+# 各 Agent 执行任务的最大步骤数，0 表示使用默认值
+[agent]
+director_max_steps = 100        # Director 编排最大步数
+coding_max_steps = 150          # Coding-Agent 最大步数
+repo_max_steps = 50             # Repo-Agent 最大步数
+chat_max_steps = 50             # Chat-Agent 最大步数
+devops_max_steps = 50           # DevOps-Agent 最大步数
+browser_max_steps = 200         # Browser-Agent 最大步数
+meta_max_steps = 50             # Meta-Agent 设计最大步数
+meta_retry_count = 5            # Meta-Agent JSON 解析重试次数
+custom_agent_max_steps = 15     # 自定义 Agent（Meta-Agent 设计）最大步数
+
 # ── CodeSeek MCP 代码分析引擎配置 ──
 [codeseek]
 # codeseek 二进制文件路径（空=不启用 MCP）
@@ -178,5 +191,11 @@ keep_recent_rounds = 2                # 始终保留的最近对话轮数
 
 # ── LLM 故障转移配置 ──
 [llm]
-# enable_fallback = true       # 启用provider级故障转移
+timeout = "5m"                  # 单次 LLM 调用超时（默认 5 分钟）
+max_retries = 5                 # 底层引擎重试次数
+step_retries = 0                # 步骤重试次数（executor/director/meta）
+tool_timeout = "180s"           # 工具调用超时（默认 180 秒）
+# enable_fallback = true        # 启用provider级故障转移
 # fallback_max_retries = 2     # fallback provider的内部重试次数
+# circuit_breaker_threshold = 0 # 熔断阈值（连续失败次数），0=不启用
+# circuit_breaker_reset_timeout = "60s"  # 熔断恢复时间
