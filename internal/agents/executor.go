@@ -21,7 +21,11 @@ import (
 type ExecutorConfig struct {
 	SystemPrompt string
 	UserInput    string
-	Adapters     []*tools.Adapter
+	// InitialMessages 预构建的初始消息列表（仅首条消息使用）。
+	// 如果非 nil，则直接使用这些消息，跳过从 SystemPrompt + UserInput 构建 system/user 消息的步骤。
+	// 用于 Director 传递包含会话记忆的预构建消息序列。
+	InitialMessages []llm.Message
+	Adapters        []*tools.Adapter
 	LLM          llm.Engine
 	MaxSteps     int
 	Publisher    *messaging.MessagePublisher
@@ -126,9 +130,19 @@ func RunAgentLoop(ctx context.Context, cfg ExecutorConfig) (ExecutorResult, erro
 		Content: cfg.UserInput,
 	}
 
-	messages := []llm.Message{systemMsg, userMsg}
-	history := make([]llm.Message, 0)
-	history = append(history, systemMsg, userMsg)
+	var messages []llm.Message
+	var history []llm.Message
+	if cfg.InitialMessages != nil {
+		// 使用预构建的初始消息（跳过 systemPrompt + userInput 构建）
+		messages = make([]llm.Message, len(cfg.InitialMessages))
+		copy(messages, cfg.InitialMessages)
+		history = make([]llm.Message, len(cfg.InitialMessages))
+		copy(history, cfg.InitialMessages)
+	} else {
+		messages = []llm.Message{systemMsg, userMsg}
+		history = make([]llm.Message, 0, 2)
+		history = append(history, systemMsg, userMsg)
+	}
 
 	// 计算 LLM 调用超时时间
 	llmTimeout := cfg.LLMTimeout
@@ -236,9 +250,15 @@ func RunAgentLoop(ctx context.Context, cfg ExecutorConfig) (ExecutorResult, erro
 		}
 	}
 
-	// ═══════ 写入初始 system 和 user 消息 ═══════
-	writeRollout(systemMsg)
-	writeRollout(userMsg)
+	// ═══════ 写入初始消息（system + user/或预构建消息） ═══════
+	if cfg.InitialMessages != nil {
+		for _, msg := range cfg.InitialMessages {
+			writeRollout(msg)
+		}
+	} else {
+		writeRollout(systemMsg)
+		writeRollout(userMsg)
+	}
 
 	for i := 0; i < cfg.MaxSteps; i++ {
 		stepNumber++
