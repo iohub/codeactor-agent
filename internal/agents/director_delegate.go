@@ -22,7 +22,7 @@ func (a *DirectorAgent) executeCustomAgent(ctx context.Context, ca *CustomAgent,
 	cfg.UserInput = task
 	cfg.Adapters = adapters
 	cfg.LLM = a.LLM
-	cfg.MaxSteps = 15
+	cfg.MaxSteps = a.customAgentMaxSteps
 	cfg.Publisher = a.Publisher
 	cfg.AgentName = ca.DisplayName
 	cfg.StopOnFinish = true

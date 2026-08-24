@@ -95,17 +95,18 @@ type AppConfig struct {
 
 // AgentConfig contains agent-specific configuration
 type AgentConfig struct {
-	YoloMode         bool   `toml:"yolo_mode"`
-	FullYoloMode     bool   `toml:"full_yolo_mode"`
-	DirectorMaxSteps int    `toml:"director_max_steps"`
-	CodingMaxSteps   int    `toml:"coding_max_steps"`
-	ChatMaxSteps     int    `toml:"chat_max_steps"`
-	RepoMaxSteps     int    `toml:"repo_max_steps"`
-	DevOpsMaxSteps   int    `toml:"devops_max_steps"`
-	BrowserMaxSteps  int    `toml:"browser_max_steps"`
-	MetaMaxSteps     int    `toml:"meta_max_steps"`
-	MetaRetryCount   int    `toml:"meta_retry_count"`
-	SpeakLang        string `toml:"lang"`
+	YoloMode            bool   `toml:"yolo_mode"`
+	FullYoloMode        bool   `toml:"full_yolo_mode"`
+	DirectorMaxSteps    int    `toml:"director_max_steps"`
+	CodingMaxSteps      int    `toml:"coding_max_steps"`
+	ChatMaxSteps        int    `toml:"chat_max_steps"`
+	RepoMaxSteps        int    `toml:"repo_max_steps"`
+	DevOpsMaxSteps      int    `toml:"devops_max_steps"`
+	BrowserMaxSteps     int    `toml:"browser_max_steps"`
+	MetaMaxSteps        int    `toml:"meta_max_steps"`
+	MetaRetryCount      int    `toml:"meta_retry_count"`
+	CustomAgentMaxSteps int    `toml:"custom_agent_max_steps"`
+	SpeakLang           string `toml:"lang"`
 }
 
 // GitCheckpointConfig holds configuration for the git checkpoint mechanism.
@@ -209,6 +210,9 @@ type LLMConfig struct {
 
 	// FallbackMaxRetries 故障转移时每个fallback provider的内部重试次数，0=使用MaxRetries
 	FallbackMaxRetries int `toml:"fallback_max_retries" json:"fallback_max_retries" yaml:"fallback_max_retries"`
+
+	// ToolTimeout 工具调用超时时间，0=使用默认值180秒
+	ToolTimeout time.Duration `toml:"tool_timeout" json:"tool_timeout" yaml:"tool_timeout"`
 }
 
 // Config is the root configuration structure
@@ -478,6 +482,9 @@ func (c *Config) validate() error {
 	if c.Agent.MetaRetryCount == 0 {
 		c.Agent.MetaRetryCount = defaultSteps.MetaRetry
 	}
+	if c.Agent.CustomAgentMaxSteps == 0 {
+		c.Agent.CustomAgentMaxSteps = defaultSteps.CustomAgent
+	}
 
 	// ═══════ LLM 推理兜底默认值设置 ═══════
 	llmDefaults := DefaultLLMConfig()
@@ -491,6 +498,10 @@ func (c *Config) validate() error {
 	// FallbackMaxRetries 默认值：如果未配置，使用 MaxRetries 的值
 	if c.LLM.FallbackMaxRetries == 0 {
 		c.LLM.FallbackMaxRetries = c.LLM.MaxRetries
+	}
+	// ToolTimeout 默认值：如果未配置，使用默认值 180s
+	if c.LLM.ToolTimeout == 0 {
+		c.LLM.ToolTimeout = llmDefaults.ToolTimeout
 	}
 
 	// ═══════ Keywords 默认值设置（向后兼容） ═══════

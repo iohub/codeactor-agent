@@ -89,6 +89,8 @@ type ExecutorConfig struct {
 	ContextCompressionThreshold int
 	// ToolResultKeepTokens 截断后每条 tool 结果保留的 token 数，<=0 时使用默认值 DefaultToolResultKeepTokens
 	ToolResultKeepTokens int
+	// ToolTimeout 工具调用超时时间，0=使用默认值
+	ToolTimeout time.Duration
 }
 
 // DefaultExecutorConfig returns an ExecutorConfig with sensible defaults applied.
@@ -583,13 +585,17 @@ func RunAgentLoop(ctx context.Context, cfg ExecutorConfig) (ExecutorResult, erro
 				// 为工具调用创建独立超时 context，防止工具卡死（如用户确认无限等待）
 				// 同时 WithCancel 保证了父 context 取消时工具调用也会被取消
 				cancelCtx, cancelCtxCancel := context.WithCancel(ctx)
-				toolCtx, toolCancel := context.WithTimeout(cancelCtx, 180*time.Second)
+				toolTimeout := cfg.ToolTimeout
+				if toolTimeout == 0 {
+					toolTimeout = 180 * time.Second
+				}
+				toolCtx, toolCancel := context.WithTimeout(cancelCtx, toolTimeout)
 				toolResult, callErr = t.Call(toolCtx, tc.Function.Arguments)
 				cancelCtxCancel()
 				toolCancel()
 				if callErr != nil {
 					if errors.Is(callErr, context.DeadlineExceeded) {
-						toolResult = fmt.Sprintf("Error: tool execution timed out after 120 seconds")
+						toolResult = fmt.Sprintf("Error: tool execution timed out after %d seconds", int(toolTimeout.Seconds()))
 					} else {
 						toolResult = fmt.Sprintf("Error: %v", callErr)
 					}

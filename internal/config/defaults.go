@@ -6,23 +6,25 @@ import "time"
 // 来源说明: default_config.toml 中的值作为"推荐值"，此处为"程序保证值"
 // 两者应保持一致。如果用户未在 TOML 中配置，使用此处定义的默认值。
 var DefaultMaxSteps = struct {
-	Director int
-	Coding    int
-	Repo      int
-	Chat      int
-	DevOps    int
-	Browser   int
-	Meta      int
-	MetaRetry int
+	Director      int
+	Coding        int
+	Repo          int
+	Chat          int
+	DevOps        int
+	Browser       int
+	Meta          int
+	MetaRetry     int
+	CustomAgent   int
 }{
-	Director: 100,
-	Coding:    150,
-	Repo:      50,
-	Chat:      50,
-	DevOps:    50,
-	Browser:   200,
-	Meta:      50,
-	MetaRetry: 5,
+	Director:    100,
+	Coding:      150,
+	Repo:        50,
+	Chat:        50,
+	DevOps:      50,
+	Browser:     200,
+	Meta:        50,
+	MetaRetry:   5,
+	CustomAgent: 15,
 }
 
 // DefaultBrowserConfig 返回默认的浏览器配置（TOML 层）
@@ -57,6 +59,7 @@ func DefaultLLMConfig() *LLMConfig {
 		CircuitBreakerResetTimeout: 0,
 		EnableFallback:         false,
 		FallbackMaxRetries:     2,
+		ToolTimeout:            180 * time.Second,
 	}
 }
 

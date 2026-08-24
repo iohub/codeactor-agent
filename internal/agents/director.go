@@ -95,6 +95,8 @@ type DirectorAgent struct {
 	EnhancedCommanderCfg config.EnhancedCommanderConfig
 	// taskID 当前任务的 taskID
 	taskID string
+	// customAgentMaxSteps 自定义 Agent 最大步数，从配置读取
+	customAgentMaxSteps int
 }
 
 func NewDirectorAgent(globalCtx *globalctx.GlobalCtx, engine llm.Engine, repo *RepoAgent, coding *CodingAgent, chat *ChatAgent, meta *MetaAgent, devops *DevOpsAgent, browser *BrowserAgent, maxSteps int, disabledAgents map[string]bool, metaRetryCount int, cfg config.Config, llmClient *llm.Client) *DirectorAgent {
@@ -446,6 +448,8 @@ func NewDirectorAgent(globalCtx *globalctx.GlobalCtx, engine llm.Engine, repo *R
 
 		// EnhancedCommander 配置
 		EnhancedCommanderCfg: cfg.EnhancedCommander,
+		// customAgentMaxSteps 从配置读取
+		customAgentMaxSteps: cfg.Agent.CustomAgentMaxSteps,
 	}
 
 	// 计算并记录 Tool Definitions 哈希，用于验证 Prompt Cache 一致性
